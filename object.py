@@ -1,88 +1,150 @@
-import cv2
-import torch
 from ultralytics import YOLO
-import numpy as np
-from collections import Counter
+import cv2
+import cvzone
+import math
+from deep_sort_realtime.deepsort_tracker import DeepSort
 
-# Periksa apakah GPU tersedia
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+class ObjectDetection:
+    def __init__(self, capture):
+        self.capture = capture
+        self.model = self.load_model()
+        self.CLASS_NAMES_DICT = self.model.model.names
+        self.gate_x = 400  # Posisi garis vertikal
+        self.objects_crossed = {}  # Untuk melacak objek dan arah lintasan
+        self.entry_count = 0
+        self.exit_count = 0
 
-# URL stream CCTV
-url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
+    def load_model(self):
+        model = YOLO("yolov8n.pt")
+        model.fuse()
+        return model
 
-# Mengambil stream video dari URL CCTV
-cap = cv2.VideoCapture(url)
+    def predict(self, img):
+        results = self.model(img, stream=True)
+        return results
 
-# Memuat model YOLOv8
-model = YOLO("yolov8n.pt")  # Pastikan model YOLOv8 telah di-download
+    def plot_boxes(self, results, img):
+        detections = []
 
-# Threshold untuk object count
-score_threshold = 0.5
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy[0]
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                print(f"Box coordinates: ({x1}, {y1}), ({x2}, {y2})")
 
-# Fungsi untuk melakukan object detection
-def detect_objects(frame):
-    # Mengubah frame menjadi RGB (YOLOv8 memerlukan format RGB)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                w, h = x2 - x1, y2 - y1
+                cls = int(box.cls[0])
+                currentClass = self.CLASS_NAMES_DICT[cls]
+                conf = math.ceil(box.conf[0] * 100) / 100
 
-    # Model inference
-    results = model(rgb_frame)
+                if conf > 0.5:
+                    print(f"Detected {currentClass} with confidence {conf}")
+                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(img, f'{currentClass} {conf}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                (0, 255, 0), 2)
 
-    return results
+                    detections.append(([x1, y1, w, h], conf, currentClass))
 
-if not cap.isOpened():
-    print("Error: Tidak dapat mengakses stream CCTV.")
-else:
-    while True:
-        # Membaca frame dari stream
-        ret, frame = cap.read()
+        return detections, img
 
-        if not ret:
-            print("Gagal membaca frame dari CCTV.")
-            break
+    def track_detect(self, detections, img, tracker):
+        tracks = tracker.update_tracks(detections, frame=img)
+        current_objects = set()
 
-        # Deteksi objek (real-time)
-        results = detect_objects(frame)
+        for track in tracks:
+            if not track.is_confirmed():
+                continue
 
-        # Mendapatkan hasil deteksi
-        boxes = results[0].boxes.xyxy.cpu().numpy()
-        scores = results[0].boxes.conf.cpu().numpy()
-        labels = results[0].names
+            track_id = track.track_id
+            ltrb = track.to_ltrb()
+            bbox = ltrb
+            x1, y1, x2, y2 = bbox
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            w, h = x2 - x1, y2 - y1
 
-        # Menghitung jumlah objek per label yang melebihi threshold
-        detected_labels = [labels[int(label)] for label in results[0].boxes.cls.cpu().numpy()]
-        label_count = Counter([label for label, score in zip(detected_labels, scores) if score >= score_threshold])
+            # Hitung titik tengah
+            center_x = (x1 + x2) // 2
+            center_y = (y1 + y2) // 2
 
-        # Gambar bounding boxes dan label pada frame
-        for box, score, label in zip(boxes, scores, detected_labels):
-            x1, y1, x2, y2 = [int(i) for i in box]
+            # Gambar kotak, ID, dan titik tengah
+            cvzone.cornerRect(img, (x1, y1, w, h), l=9, rt=1, colorR=(255, 0, 255))
+            cv2.putText(img, f'ID: {track_id}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)  # Gambar titik tengah
 
-            # Gambar bounding box pada frame
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=2)
+            # Lacak objek
+            current_objects.add(track_id)
 
-            # Tampilkan label dan skor deteksi di bounding box
-            text = f"{label}: {score:.2f}"
-            cv2.putText(frame, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # Periksa jika titik tengah objek melintasi garis vertikal
+            if track_id in self.objects_crossed:
+                prev_x = self.objects_crossed[track_id]
+                if (prev_x < self.gate_x and center_x >= self.gate_x):
+                    print(f"Object {track_id} entered.")
+                    self.entry_count += 1
+                elif (prev_x >= self.gate_x and center_x < self.gate_x):
+                    print(f"Object {track_id} exited.")
+                    self.exit_count += 1
+                self.objects_crossed[track_id] = center_x
+            else:
+                self.objects_crossed[track_id] = center_x
 
-        # Menampilkan jumlah objek yang terdeteksi di sudut frame (hanya yang melebihi threshold)
-        y_offset = 30
-        for label, count in label_count.items():
-            text = f"{label}: {count}"
+        # Hapus objek yang hilang dari pelacakan
+        for track_id in list(self.objects_crossed.keys()):
+            if track_id not in current_objects:
+                del self.objects_crossed[track_id]
 
-            # Membuat background kotak untuk teks
-            (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 2)
-            cv2.rectangle(frame, (10, y_offset - 30), (10 + text_width, y_offset), (0, 0, 0), -1)
+        # Menampilkan jumlah objek yang masuk dan keluar
+        cv2.putText(img, f'Entry: {self.entry_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(img, f'Exit: {self.exit_count}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-            # Menampilkan teks dengan ukuran yang lebih besar dan warna putih
-            cv2.putText(frame, text, (10, y_offset - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
-            y_offset += text_height + 20  # Menambah jarak antar baris
+        return img
 
-        # Menampilkan frame dengan bounding boxes dan object count
-        cv2.imshow("CCTV Live Stream with Real-Time YOLOv8 Object Detection and Object Count", frame)
+    def draw_vertical_line(self, img, x_position):
+        # Gambar garis vertikal
+        cv2.line(img, (x_position, 0), (x_position, img.shape[0]), (0, 0, 255), 2)
+        return img
 
-        # Keluar dengan menekan tombol 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    def __call__(self):
+        cap = cv2.VideoCapture(self.capture)
+        if not cap.isOpened():
+            print("Error: Unable to open video capture.")
+            return
 
-# Membersihkan jendela OpenCV dan mengakhiri stream
-cap.release()
-cv2.destroyAllWindows()
+        tracker = DeepSort(max_age=50,  # Nilai lebih tinggi untuk toleransi deteksi yang hilang
+                           n_init=10,  # Diperlukan beberapa deteksi sebelum pelacakan dimulai
+                           nms_max_overlap=1.0,
+                           max_cosine_distance=0.3,
+                           nn_budget=None,
+                           override_track_class=None,
+                           embedder="mobilenet",
+                           half=True,
+                           bgr=True,
+                           embedder_gpu=True,
+                           embedder_model_name=None,
+                           embedder_wts=None,
+                           polygon=False,
+                           today=None)
+
+        while True:
+            ret, img = cap.read()
+            if not ret:
+                print("Error: Unable to read frame.")
+                break
+
+            results = self.predict(img)
+            detections, frames = self.plot_boxes(results, img)
+            detect_frame = self.track_detect(detections, frames, tracker)
+            detect_frame = self.draw_vertical_line(detect_frame, self.gate_x)
+
+            cv2.imshow('Image', detect_frame)
+
+            if cv2.waitKey(1) == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+# Ganti URL RTSP dengan URL CCTV kamu
+rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
+detector = ObjectDetection(capture=rtsp_url)
+detector()

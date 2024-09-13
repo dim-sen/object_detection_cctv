@@ -8,17 +8,16 @@ from collections import Counter
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # URL stream CCTV
-url = "http://172.17.17.2/"
+url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
 
 # Mengambil stream video dari URL CCTV
 cap = cv2.VideoCapture(url)
 
-# Mengatur resolusi stream CCTV (contoh: 640x480 untuk performa lebih cepat)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
 # Memuat model YOLOv8
 model = YOLO("yolov8n.pt")  # Pastikan model YOLOv8 telah di-download
+
+# Threshold untuk object count
+score_threshold = 0.5
 
 # Fungsi untuk melakukan object detection
 def detect_objects(frame):
@@ -49,23 +48,33 @@ else:
         scores = results[0].boxes.conf.cpu().numpy()
         labels = results[0].names
 
-        # Menghitung jumlah objek per label
+        # Menghitung jumlah objek per label yang melebihi threshold
         detected_labels = [labels[int(label)] for label in results[0].boxes.cls.cpu().numpy()]
-        label_count = Counter(detected_labels)
+        label_count = Counter([label for label, score in zip(detected_labels, scores) if score >= score_threshold])
 
         # Gambar bounding boxes dan label pada frame
         for box, score, label in zip(boxes, scores, detected_labels):
             x1, y1, x2, y2 = [int(i) for i in box]
+
+            # Gambar bounding box pada frame
             cv2.rectangle(frame, (x1, y1), (x2, y2), color=(0, 255, 0), thickness=2)
+
+            # Tampilkan label dan skor deteksi di bounding box
             text = f"{label}: {score:.2f}"
             cv2.putText(frame, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        # Menampilkan jumlah objek yang terdeteksi di sudut frame
-        y_offset = 20
+        # Menampilkan jumlah objek yang terdeteksi di sudut frame (hanya yang melebihi threshold)
+        y_offset = 30
         for label, count in label_count.items():
             text = f"{label}: {count}"
-            cv2.putText(frame, text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            y_offset += 30
+
+            # Membuat background kotak untuk teks
+            (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 2)
+            cv2.rectangle(frame, (10, y_offset - 30), (10 + text_width, y_offset), (0, 0, 0), -1)
+
+            # Menampilkan teks dengan ukuran yang lebih besar dan warna putih
+            cv2.putText(frame, text, (10, y_offset - 10), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
+            y_offset += text_height + 20  # Menambah jarak antar baris
 
         # Menampilkan frame dengan bounding boxes dan object count
         cv2.imshow("CCTV Live Stream with Real-Time YOLOv8 Object Detection and Object Count", frame)
