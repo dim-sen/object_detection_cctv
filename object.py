@@ -1,8 +1,12 @@
+import torch
 from ultralytics import YOLO
 import cv2
 import cvzone
 import math
 from deep_sort_realtime.deepsort_tracker import DeepSort
+
+# Periksa apakah GPU tersedia
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ObjectDetection:
     def __init__(self, capture):
@@ -144,7 +148,6 @@ class ObjectDetection:
         cap.release()
         cv2.destroyAllWindows()
 
-# Ganti URL RTSP dengan URL CCTV kamu
 rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
 detector = ObjectDetection(capture=rtsp_url)
 detector()
