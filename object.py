@@ -1,12 +1,13 @@
 import torch
 from ultralytics import YOLO
 import cv2
-import cvzone
 import math
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
 # Periksa apakah GPU tersedia
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print(torch.cuda.is_available())
 
 class ObjectDetection:
     def __init__(self, capture):
@@ -19,15 +20,15 @@ class ObjectDetection:
         self.exit_count = 0
 
     def load_model(self):
-        model = YOLO("yolov8n.pt")
+        model = YOLO("yolov8x.pt")
         model.fuse()
         return model
 
-    def predict(self, img):
-        results = self.model(img, stream=True)
+    def predict(self):
+        results = self.model(self.capture, stream=True, show=True)
         return results
 
-    def plot_boxes(self, results, img):
+    def track_detect(self, results, img, tracker):
         detections = []
 
         for r in results:
@@ -35,24 +36,14 @@ class ObjectDetection:
             for box in boxes:
                 x1, y1, x2, y2 = box.xyxy[0]
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                print(f"Box coordinates: ({x1}, {y1}), ({x2}, {y2})")
-
                 w, h = x2 - x1, y2 - y1
                 cls = int(box.cls[0])
                 currentClass = self.CLASS_NAMES_DICT[cls]
                 conf = math.ceil(box.conf[0] * 100) / 100
 
                 if conf > 0.5:
-                    print(f"Detected {currentClass} with confidence {conf}")
-                    cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.putText(img, f'{currentClass} {conf}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                                (0, 255, 0), 2)
-
                     detections.append(([x1, y1, w, h], conf, currentClass))
 
-        return detections, img
-
-    def track_detect(self, detections, img, tracker):
         tracks = tracker.update_tracks(detections, frame=img)
         current_objects = set()
 
@@ -65,16 +56,10 @@ class ObjectDetection:
             bbox = ltrb
             x1, y1, x2, y2 = bbox
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            w, h = x2 - x1, y2 - y1
 
             # Hitung titik tengah
             center_x = (x1 + x2) // 2
             center_y = (y1 + y2) // 2
-
-            # Gambar kotak, ID, dan titik tengah
-            cvzone.cornerRect(img, (x1, y1, w, h), l=9, rt=1, colorR=(255, 0, 255))
-            cv2.putText(img, f'ID: {track_id}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-            cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)  # Gambar titik tengah
 
             # Lacak objek
             current_objects.add(track_id)
@@ -135,9 +120,8 @@ class ObjectDetection:
                 print("Error: Unable to read frame.")
                 break
 
-            results = self.predict(img)
-            detections, frames = self.plot_boxes(results, img)
-            detect_frame = self.track_detect(detections, frames, tracker)
+            results = self.predict()
+            detect_frame = self.track_detect(results, img, tracker)
             detect_frame = self.draw_vertical_line(detect_frame, self.gate_x)
 
             cv2.imshow('Image', detect_frame)
@@ -148,6 +132,7 @@ class ObjectDetection:
         cap.release()
         cv2.destroyAllWindows()
 
+# RTSP URL untuk kamera CCTV
 rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
 detector = ObjectDetection(capture=rtsp_url)
 detector()
