@@ -44,18 +44,17 @@ class ObjectDetection:
         return results
 
     def detect_crossing(self, object_id, prev_pos, current_pos):
-        # Menghitung jarak dari titik objek ke garis
-        def distance_from_line(x, y, x1, y1, x2, y2):
-            # Rumus jarak titik ke garis
-            return abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / (
-                    ((y2 - y1) ** 2 + (x2 - x1) ** 2) ** 0.5)
+        # Menghitung sisi dari titik objek terhadap garis menggunakan persamaan garis
+        def get_side_of_line(x, y, x1, y1, x2, y2):
+            # Persamaan untuk menentukan apakah objek berada di sisi kiri atau kanan dari garis
+            return (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
 
-        prev_dist = distance_from_line(prev_pos[0], prev_pos[1], self.start_x, self.start_y, self.end_x, self.end_y)
-        curr_dist = distance_from_line(current_pos[0], current_pos[1], self.start_x, self.start_y, self.end_x, self.end_y)
+        prev_side_value = get_side_of_line(prev_pos[0], prev_pos[1], self.start_x, self.start_y, self.end_x, self.end_y)
+        curr_side_value = get_side_of_line(current_pos[0], current_pos[1], self.start_x, self.start_y, self.end_x, self.end_y)
 
-        # Tentukan sisi objek terhadap garis
-        prev_side = 'entry' if prev_pos[0] < self.start_x else 'exit'
-        curr_side = 'entry' if current_pos[0] < self.start_x else 'exit'
+        # Tentukan sisi sebelumnya dan sisi saat ini berdasarkan tanda dari nilai persamaan
+        prev_side = 'entry' if prev_side_value > 0 else 'exit'
+        curr_side = 'entry' if curr_side_value > 0 else 'exit'
 
         # Jika objek melewati garis (berpindah sisi)
         if prev_side != curr_side:
@@ -78,9 +77,6 @@ class ObjectDetection:
 
             # Menggambar garis vertikal
             self.draw_line(frame)
-
-            # Overlay for drawing
-            overlay = frame.copy()
 
             # Menampilkan hasil deteksi objek pada frame
             for result in results:
