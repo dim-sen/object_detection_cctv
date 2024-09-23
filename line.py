@@ -1,6 +1,7 @@
 import math
 
 import cv2
+import numpy as np
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from ultralytics import YOLO
 
@@ -48,67 +49,86 @@ class ObjectDetection:
     def track_detect(self, detections, img, tracker):
         tracks = tracker.update_tracks(detections, frame=img)
         current_objects = set()
+
+        # Hitung titik tengah dari garis utama
+        mid_x = (self.start_x + self.end_x) // 2
+        mid_y = (self.start_y + self.end_y) // 2
+
         for track in tracks:
             if not track.is_confirmed():
                 continue
+
             track_id = track.track_id
             ltrb = track.to_ltrb()
             bbox = ltrb
             x1, y1, x2, y2 = bbox
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            x1, y1, x2, y2 = int(x1), int(y1), int(y2), int(y2)
+
+            # Hitung titik tengah dari bounding box
             center_x = (x1 + x2) // 2
             center_y = (y1 + y2) // 2
+
+            # Lacak objek
             current_objects.add(track_id)
 
-            # Gambar ekor untuk menunjukkan arah objek
-            if track_id in self.object_positions:
-                prev_x, prev_y = self.object_positions[track_id]
-                cv2.line(img, (prev_x, prev_y), (center_x, center_y), (255, 0, 0), 2)  # Ekor berwarna biru
-
-            self.object_positions[track_id] = (center_x, center_y)
-
-            # Menghitung arah berdasarkan garis utama dan titik ke-3
+            # Periksa jika objek sudah pernah terdeteksi sebelumnya
             if track_id in self.objects_crossed:
-                prev_x = self.objects_crossed[track_id]
+                prev_center = self.objects_crossed[track_id]['position']
+                prev_direction = self.objects_crossed[track_id]['direction']
+
+                # Hitung vektor dari posisi sebelumnya ke posisi sekarang
+                direction_vector = (center_x - prev_center[0], center_y - prev_center[1])
+
+                # Hitung vektor dari titik tengah garis utama ke titik ke-3 (acuan entry)
+                reference_vector = (self.reference_x - mid_x, self.reference_y - mid_y)
 
                 # Periksa jika objek melewati garis utama
-                if (prev_x < self.start_x and center_x >= self.start_x):
-                    if center_x > self.reference_x:  # Menuju ke titik ke-3
+                if (prev_center[0] < mid_x and center_x >= mid_x) or (prev_center[0] >= mid_x and center_x < mid_x):
+                    # Periksa arah pergerakan: mendekati atau menjauhi titik ke-3
+                    if self.is_moving_towards(direction_vector, reference_vector):
                         print(f"Object {track_id} entered.")
                         self.entry_count += 1
-                    else:  # Menjauhi titik ke-3
-                        print(f"Object {track_id} exited.")
-                        self.exit_count += 1
-                elif (prev_x >= self.start_x and center_x < self.start_x):
-                    if center_x < self.reference_x:  # Menuju ke titik ke-3
-                        print(f"Object {track_id} entered.")
-                        self.entry_count += 1
-                    else:  # Menjauhi titik ke-3
+                    else:
                         print(f"Object {track_id} exited.")
                         self.exit_count += 1
 
-                self.objects_crossed[track_id] = center_x
+                # Update posisi dan arah terbaru objek
+                self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': direction_vector}
             else:
-                self.objects_crossed[track_id] = center_x
+                # Simpan posisi awal objek
+                self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': (0, 0)}
 
+        # Hapus objek yang hilang dari pelacakan
         for track_id in list(self.objects_crossed.keys()):
             if track_id not in current_objects:
                 del self.objects_crossed[track_id]
-                del self.object_positions[track_id]  # Hapus posisi objek yang hilang
 
+        # Tampilkan jumlah objek yang masuk dan keluar
         cv2.putText(img, f'Entry: {self.entry_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(img, f'Exit: {self.exit_count}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         return img
+
+    def is_moving_towards(self, direction_vector, reference_vector):
+        """
+        Menghitung apakah vektor arah objek mendekati atau menjauhi titik ke-3
+        menggunakan dot product.
+        """
+        dot_product = direction_vector[0] * reference_vector[0] + direction_vector[1] * reference_vector[1]
+        return dot_product > 0  # Positif berarti objek mendekati titik ke-3, negatif berarti menjauhi
 
     def draw_lines(self, img):
         # Gambar garis utama
         if self.start_x and self.start_y and self.end_x and self.end_y:
             cv2.line(img, (self.start_x, self.start_y), (self.end_x, self.end_y), (0, 0, 255), 2)
 
-        # Gambar garis penentu entry/exit
-        if self.end_x and self.end_y and self.reference_x and self.reference_y:
-            cv2.line(img, (self.end_x, self.end_y), (self.reference_x, self.reference_y), (0, 255, 0), 2)
+        # Hitung titik tengah dari garis utama
+        mid_x = (self.start_x + self.end_x) // 2
+        mid_y = (self.start_y + self.end_y) // 2
+
+        # Gambar garis dari titik tengah ke titik ke-3 (reference)
+        if self.reference_x and self.reference_y:
+            cv2.line(img, (mid_x, mid_y), (self.reference_x, self.reference_y), (0, 255, 0), 2)
 
         return img
 
