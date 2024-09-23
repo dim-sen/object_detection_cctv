@@ -25,8 +25,8 @@ class ObjectDetection:
         self.previous_centers = {}
 
         # Hitungan masuk dan keluar
-        self.count_in = {}
-        self.count_out = {}
+        self.count_in = 0
+        self.count_out = 0
 
     def load_model(self):
         # Memuat model YOLOv8
@@ -42,7 +42,7 @@ class ObjectDetection:
         results = self.model.track(frame, persist=True)  # Tracking objek pada setiap frame
         return results
 
-    def check_crossing(self, object_id, center_x, label):
+    def check_crossing(self, object_id, center_x):
         # Menghitung apakah objek melintasi garis vertikal
         previous_center = self.previous_centers.get(object_id, None)
 
@@ -51,44 +51,23 @@ class ObjectDetection:
 
             # Deteksi arah lintasan (misalnya jika garis vertikal)
             if prev_x < self.start_x and center_x >= self.start_x:
-                # Jika object belum pernah ada, tambahkan ke hitungan
-                if label not in self.count_in:
-                    self.count_in[label] = 0
-                self.count_in[label] += 1
-                print(f"{label} masuk. Total masuk: {self.count_in[label]}")
+                self.count_in += 1
+                print(f"Object {object_id} masuk. Total masuk: {self.count_in}")
             elif prev_x >= self.start_x and center_x < self.start_x:
-                if label not in self.count_out:
-                    self.count_out[label] = 0
-                self.count_out[label] += 1
-                print(f"{label} keluar. Total keluar: {self.count_out[label]}")
+                self.count_out += 1
+                print(f"Object {object_id} keluar. Total keluar: {self.count_out}")
 
         # Simpan posisi tengah objek saat ini untuk frame berikutnya
         self.previous_centers[object_id] = (center_x,)
 
-    def draw_entry_exit_info(self, frame):
-        # Menampilkan informasi 'entry' dan 'exit' di frame
-        entry_text = "Entry:"
-        exit_text = "Exit:"
+    def display_counts(self, frame):
+        # Menampilkan jumlah entry dan exit di pojok kiri atas
+        entry_text = f"entry: {self.count_in}"
+        exit_text = f"exit: {self.count_out}"
 
-        # Tampilkan jumlah masuk (entry)
-        for label, count in self.count_in.items():
-            entry_text += f"\n{label}: {count}"
-
-        # Tampilkan jumlah keluar (exit)
-        for label, count in self.count_out.items():
-            exit_text += f"\n{label}: {count}"
-
-        # Atur teks pada pojok kanan atas untuk 'entry'
-        y_offset = 20
-        for i, line in enumerate(entry_text.split('\n')):
-            cv2.putText(frame, line, (frame.shape[1] - 250, y_offset + i * 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-        # Atur teks pada pojok kiri atas untuk 'exit'
-        y_offset = 20
-        for i, line in enumerate(exit_text.split('\n')):
-            cv2.putText(frame, line, (10, y_offset + i * 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        # Posisi teks di pojok kiri atas
+        cv2.putText(frame, entry_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(frame, exit_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
     def __call__(self):
         while True:
@@ -105,8 +84,6 @@ class ObjectDetection:
             # Menggambar garis
             self.draw_line(frame)
 
-            overlay = frame.copy()
-
             # Menampilkan hasil deteksi objek pada frame
             for result in results:
                 boxes = result.boxes
@@ -114,20 +91,19 @@ class ObjectDetection:
                     # Mengambil koordinat kotak pembatas (bounding box)
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                     object_id = box.id  # Menggunakan ID objek untuk pelacakan
-                    label = box.cls  # Menggunakan label objek (misalnya "person", "car")
 
                     # Menghitung titik tengah (center point) dari kotak pembatas
                     center_x = (x1 + x2) // 2
                     center_y = (y1 + y2) // 2
 
                     # Cek apakah objek melewati garis
-                    self.check_crossing(object_id, center_x, label)
+                    self.check_crossing(object_id, center_x)
 
                     # Menggambar titik tengah
                     cv2.circle(frame, (center_x, center_y), 5, (0, 255, 0), -1)  # Titik tengah berwarna hijau
 
-            # Tampilkan informasi entry dan exit
-            self.draw_entry_exit_info(frame)
+            # Tampilkan jumlah entry dan exit di pojok kiri atas
+            self.display_counts(frame)
 
             # Tampilkan frame yang diambil dari CCTV
             cv2.imshow("CCTV Stream with Object Tracking", frame)
