@@ -2,8 +2,46 @@ import math
 
 import cv2
 import numpy as np
+import torch
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from ultralytics import YOLO
+from numpy import linalg as LA
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print(torch.cuda.is_available())
+
+
+def line_vectorize(point1, point2):
+    a = point2[0] - point1[0]
+    b = point2[1] - point1[1]
+    return [a, b]
+
+
+def check_direction(pt1, pt2, pt3, pt4):
+    u = np.array(line_vectorize(pt1, pt2))
+    v = np.array(line_vectorize(pt3, pt4))
+    i = np.inner(u, v)
+    n = LA.norm(u) * LA.norm(v)
+    c = i / n
+    a = np.rad2deg(np.arccos(np.clip(c, -1.0, 1.0)))
+    if u[0] * v[1] - u[1] * v[0] < 0:
+        return a
+    else:
+        return 360 - a
+coordinateObject = []
+
+class objekTracked:
+    def __init__(self, objectId, x, y):
+        self.objectId = objectId
+        self.x = x
+        self.y = y
+
+def getObjectById(objectId):
+    for object in coordinateObject:
+        if object.objectId == objectId:
+            return object
+    return None
 
 class ObjectDetection:
     def __init__(self, capture):
@@ -22,15 +60,20 @@ class ObjectDetection:
 
     def load_model(self):
         model = YOLO("yolov5s.pt")
+        model.to('cuda')
+        print(model.device)
         model.fuse()
         return model
 
     def predict(self, img):
-        results = self.model(img, stream=True)
+        results = self.model.track(img, stream=True)
+
         return results
 
     def plot_boxes(self, results, img):
         detections = []
+        cv2.putText(img, f'Entry: {self.entry_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(img, f'Exit: {self.exit_count}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         for r in results:
             boxes = r.boxes
             for box in boxes:
@@ -39,11 +82,16 @@ class ObjectDetection:
                 w, h = x2 - x1, y2 - y1
                 cls = int(box.cls[0])
                 currentClass = self.CLASS_NAMES_DICT[cls]
-                conf = math.ceil(box.conf[0] * 100) / 100
-                if conf > 0.5:
-                    center_x = (x1 + x2) // 2
-                    center_y = (y1 + y2) // 2
-                    detections.append(([x1, y1, w, h], conf, currentClass))
+                center_x = (x1 + x2) // 2
+                center_y = (y1 + y2) // 2
+                detections.append(([x1, y1, w, h], currentClass))
+                print(box.id)
+                if (getObjectById(box.id) != None):
+                    self.is_line_crossed_danger(center_x, center_y, getObjectById(box.id).x,
+                                                getObjectById(box.id).y)
+                coordinateObject.append(objekTracked(box.id, center_x, center_y))
+                img = r.plot()
+
         return detections, img
 
     def track_detect(self, detections, img, tracker):
@@ -71,37 +119,38 @@ class ObjectDetection:
             # Lacak objek
             current_objects.add(track_id)
 
-            # Periksa jika objek sudah pernah terdeteksi sebelumnya
-            if track_id in self.objects_crossed:
-                prev_center = self.objects_crossed[track_id]['position']
-                prev_direction = self.objects_crossed[track_id]['direction']
-
-                # Hitung vektor dari posisi sebelumnya ke posisi sekarang
-                direction_vector = (center_x - prev_center[0], center_y - prev_center[1])
-
-                # Hitung vektor dari titik tengah garis utama ke titik ke-3 (acuan entry)
-                reference_vector = (self.reference_x - mid_x, self.reference_y - mid_y)
-
-                # Periksa jika objek melewati garis utama
-                if (prev_center[0] < mid_x and center_x >= mid_x) or (prev_center[0] >= mid_x and center_x < mid_x):
-                    # Periksa arah pergerakan: mendekati atau menjauhi titik ke-3
-                    if self.is_moving_towards(direction_vector, reference_vector):
-                        print(f"Object {track_id} entered.")
-                        self.entry_count += 1
-                    else:
-                        print(f"Object {track_id} exited.")
-                        self.exit_count += 1
-
-                # Update posisi dan arah terbaru objek
-                self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': direction_vector}
-            else:
-                # Simpan posisi awal objek
-                self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': (0, 0)}
-
-        # Hapus objek yang hilang dari pelacakan
-        for track_id in list(self.objects_crossed.keys()):
-            if track_id not in current_objects:
-                del self.objects_crossed[track_id]
+        #     # Periksa jika objek sudah pernah terdeteksi sebelumnya
+        #     if track_id in self.objects_crossed:
+        #         prev_center = self.objects_crossed[track_id]['position']
+        #         prev_direction = self.objects_crossed[track_id]['direction']
+        #
+        #         #
+        #         # # Hitung vektor dari posisi sebelumnya ke posisi sekarang
+        #         # direction_vector = (center_x - prev_center[0], center_y - prev_center[1])
+        #         #
+        #         # # Hitung vektor dari titik tengah garis utama ke titik ke-3 (acuan entry)
+        #         # reference_vector = (self.reference_x - mid_x, self.reference_y - mid_y)
+        #         #
+        #         # # Periksa jika objek melewati garis utama
+        #         # if (prev_center[0] < mid_x and center_x >= mid_x) or (prev_center[0] >= mid_x and center_x < mid_x):
+        #         #     # Periksa arah pergerakan: mendekati atau menjauhi titik ke-3
+        #         #     if self.is_moving_towards(direction_vector, reference_vector):
+        #         #         print(f"Object {track_id} entered.")
+        #         #         self.entry_count += 1
+        #         #     else:
+        #         #         print(f"Object {track_id} exited.")
+        #         #         self.exit_count += 1
+        #
+        #         # Update posisi dan arah terbaru objek
+        #         self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': direction_vector}
+        #     else:
+        #         # Simpan posisi awal objek
+        #         self.objects_crossed[track_id] = {'position': (center_x, center_y), 'direction': (0, 0)}
+        #
+        #     # Hapus objek yang hilang dari pelacakan
+        # for track_id in list(self.objects_crossed.keys()):
+        #     if track_id not in current_objects:
+        #         del self.objects_crossed[track_id]
 
         # Tampilkan jumlah objek yang masuk dan keluar
         cv2.putText(img, f'Entry: {self.entry_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -131,6 +180,32 @@ class ObjectDetection:
             cv2.line(img, (mid_x, mid_y), (self.reference_x, self.reference_y), (0, 255, 0), 2)
 
         return img
+
+    def is_line_crossed_danger(self, cx, cy, prev_cx, prev_cy):
+        p3 = (self.start_x, self.start_y)
+        p4 = (self.end_x, self.end_y)
+        p1 = (cx, cy)
+        p2 = (prev_cx, prev_cy)
+        tc1 = (p1[0] - p3[0]) * (p3[1] - p4[1]) - (p1[1] - p3[1]) * (p3[0] - p4[0])
+        tc2 = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0])
+        td1 = (p2[0] - p1[0]) * (p1[1] - p3[1]) - (p2[1] - p1[1]) * (p1[0] - p3[0])
+        td2 = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0])
+
+        if (tc2 != 0 and td2 != 0 and 0 <= tc1 / tc2 <= 1 and 0 <= td1 / td2 <= 1):
+            self.entry_count = self.entry_count + 1
+            print(self.entry_count)
+
+    def check_direction(pt1, pt2, pt3, pt4):
+        u = np.array(line_vectorize(pt1, pt2))
+        v = np.array(line_vectorize(pt3, pt4))
+        i = np.inner(u, v)
+        n = LA.norm(u) * LA.norm(v)
+        c = i / n
+        a = np.rad2deg(np.arccos(np.clip(c, -1.0, 1.0)))
+        if u[0] * v[1] - u[1] * v[0] < 0:
+            return a
+        else:
+            return 360 - a
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -167,10 +242,9 @@ class ObjectDetection:
 
             results = self.predict(img)
             detections, frames = self.plot_boxes(results, img)
-            detect_frame = self.track_detect(detections, frames, tracker)
-            detect_frame = self.draw_lines(detect_frame)
-
-            cv2.imshow('Image', detect_frame)
+            # detect_frame = self.track_detect(detections, frames, tracker)
+            detect_frame = self.draw_lines(frames)
+            cv2.imshow('Image', frames)
 
             if cv2.waitKey(1) == ord('q'):
                 break
@@ -179,6 +253,6 @@ class ObjectDetection:
         cv2.destroyAllWindows()
 
 # Ganti URL RTSP dengan URL CCTV kamu
-rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=3&subtype=0"
+rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
 detector = ObjectDetection(capture=rtsp_url)
 detector()
