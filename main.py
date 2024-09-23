@@ -40,7 +40,10 @@ class ObjectDetection:
 
                 if conf > 0.5:
                     print(f"Detected {currentClass} with confidence {conf}")
+                    center_x = (x1 + x2) // 2
+                    center_y = (y1 + y2) // 2
                     cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)
                     cv2.putText(img, f'{currentClass} {conf}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                                 (0, 255, 0), 2)
 
@@ -61,16 +64,10 @@ class ObjectDetection:
             bbox = ltrb
             x1, y1, x2, y2 = bbox
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            w, h = x2 - x1, y2 - y1
 
             # Hitung titik tengah
             center_x = (x1 + x2) // 2
             center_y = (y1 + y2) // 2
-
-            # Gambar kotak, ID, dan titik tengah
-            cvzone.cornerRect(img, (x1, y1, w, h), l=9, rt=1, colorR=(255, 0, 255))
-            cv2.putText(img, f'ID: {track_id}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-            cv2.circle(img, (center_x, center_y), 5, (0, 0, 255), -1)  # Gambar titik tengah
 
             # Lacak objek
             current_objects.add(track_id)
@@ -145,6 +142,6 @@ class ObjectDetection:
         cv2.destroyAllWindows()
 
 # Ganti URL RTSP dengan URL CCTV kamu
-rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=3&subtype=0"
+rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=2&subtype=0"
 detector = ObjectDetection(capture=rtsp_url)
 detector()
