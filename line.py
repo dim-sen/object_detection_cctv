@@ -295,8 +295,10 @@ class ObjectDetection:
         cv2.destroyAllWindows()
 
 # Ganti URL RTSP dengan URL CCTV kamu
-# rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=4&subtype=0"
-rtsp_url = "https://www.tjt-info.co.id/LiveApp/streams/211884290923669138161535.m3u8"
+rtsp_url = "rtsp://admin:AlphaBeta123@172.17.17.2:554/cam/realmonitor?channel=3&subtype=0"
+# rtsp_url = "https://www.tjt-info.co.id/LiveApp/streams/211884290923669138161535.m3u8"
+# rtsp_url = "https://pelindung.bandung.go.id:3443/video/DPU/djundjunan.m3u8"
+# rtsp_url = "https://pelindung.bandung.go.id:3443/video/HIKSVISION/sukajadisukagalihh.m3u8"
 # rtsp_url = "https://www.tjt-info.co.id/LiveApp/streams/357514173892609384751207.m3u8"
 # rtsp_url = "http://103.151.177.124:90/mjpg/video.mjpg?overview=0&camera=1&resolution=1280x720&videoframeskipmode=empty&timestamp=1727162832712&Axis-Orig-Sw=true"
 detector = ObjectDetection(capture=rtsp_url)
