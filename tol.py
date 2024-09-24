@@ -6,12 +6,15 @@ from numpy import linalg as LA
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 def line_vectorize(point1, point2):
     a = point2[0] - point1[0]
     b = point2[1] - point1[1]
     return [a, b]
 
+
 coordinateObject = []
+
 
 class objekTracked:
     def __init__(self, objectId, x, y):
@@ -19,11 +22,13 @@ class objekTracked:
         self.x = x
         self.y = y
 
+
 def getObjectById(objectId):
-    for object in coordinateObject:
-        if object.objectId == objectId:
-            return object
+    for obj in coordinateObject:
+        if obj.objectId == objectId:
+            return obj
     return None
+
 
 class ObjectDetection:
     def __init__(self, capture):
@@ -54,35 +59,20 @@ class ObjectDetection:
         for r in results:
             boxes = r.boxes
             for box in boxes:
-                # Dapatkan koordinat bounding box
                 x1, y1, x2, y2 = box.xyxy[0]
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-
-                # Hitung pusat (center) bounding box
                 center_x = (x1 + x2) // 2
                 center_y = (y1 + y2) // 2
-
-                # Cetak ID objek untuk referensi debugging
                 print(box.id)
-
-                # Gambar lingkaran di pusat bounding box
-                cv2.circle(img, (center_x, center_y), radius=5, color=(255, 0, 0), thickness=-1)
-
-                # Pengecekan jika objek telah dilacak sebelumnya dan cek apakah objek telah melintasi garis
-                if getObjectById(box.id) != None:
+                if getObjectById(box.id) is not None:
                     self.is_line_crossed_danger(center_x, center_y, getObjectById(box.id).x, getObjectById(box.id).y)
-
-                # Jika objek baru, tambahkan ke daftar coordinateObject
-                if getObjectById(box.id) == None:
+                if getObjectById(box.id) is None:
                     coordinateObject.append(objekTracked(box.id, center_x, center_y))
                 else:
-                    # Update posisi objek di dalam daftar
                     for i, item in enumerate(coordinateObject):
                         if item.objectId == box.id:
                             coordinateObject[i] = objekTracked(box.id, center_x, center_y)
                             break
-
-                # Gambar bounding box di gambar (frame) menggunakan fungsi YOLO
                 img = r.plot()
 
         return detections, img
@@ -135,7 +125,8 @@ class ObjectDetection:
             elif self.point_count == 2:
                 self.reference_x, self.reference_y = x, y
                 self.point_count += 1
-                print(f"Lines set: Start({self.start_x}, {self.start_y}), End({self.end_x}, {self.end_y}), Reference({self.reference_x}, {self.reference_y})")
+                print(
+                    f"Lines set: Start({self.start_x}, {self.start_y}), End({self.end_x}, {self.end_y}), Reference({self.reference_x}, {self.reference_y})")
 
     def __call__(self):
         cap = cv2.VideoCapture(self.capture)
@@ -146,14 +137,20 @@ class ObjectDetection:
         cv2.namedWindow('Image')
         cv2.setMouseCallback('Image', self.mouse_callback)
 
+        frame_skip = 5  # skip every 5 frames
+        frame_count = 0
+
         while True:
+            frame_count += 1
             ret, img = cap.read()
             if not ret:
                 print("Error: Unable to read frame.")
                 break
 
-            results = self.predict(img)
-            detections, img = self.plot_boxes(results, img)
+            if frame_count % frame_skip == 0:
+                results = self.predict(img)
+                detections, img = self.plot_boxes(results, img)
+
             img = self.draw_lines(img)
             cv2.imshow('Image', img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -161,6 +158,7 @@ class ObjectDetection:
 
         cap.release()
         cv2.destroyAllWindows()
+
 
 # Ganti URL RTSP dengan URL CCTV kamu
 rtsp_url = "https://www.tjt-info.co.id/LiveApp/streams/998223146655371157400972.m3u8"
