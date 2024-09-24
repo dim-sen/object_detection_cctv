@@ -167,6 +167,9 @@ class ObjectDetection:
 
     def is_moving_towards(self, direction_vector, reference_vector):
         """
+        <video id="my_video_752_html5_api" class="vjs-tech" preload="auto" autoplay="" data-setup="{}" src="blob:https://bpjt.pu.go.id/6a482154-ed0b-44e4-a4bf-7a5725ec3471">
+                                                                <source src="https://www.tjt-info.co.id/LiveApp/streams/998223146655371157400972.m3u8" type="application/x-mpegURL">
+                                                            </video>
         Menghitung apakah vektor arah objek mendekati atau menjauhi titik ke-3
         menggunakan dot product.
         """
