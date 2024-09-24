@@ -66,7 +66,7 @@ class ObjectDetection:
         return model
 
     def predict(self, img):
-        results = self.model.track(img, stream=True)
+        results = self.model.track(img, persist=True)
 
         return results
 
@@ -89,7 +89,14 @@ class ObjectDetection:
                 if (getObjectById(box.id) != None):
                     self.is_line_crossed_danger(center_x, center_y, getObjectById(box.id).x,
                                                 getObjectById(box.id).y)
-                coordinateObject.append(objekTracked(box.id, center_x, center_y))
+                if (getObjectById(box.id) == None):
+                    coordinateObject.append(objekTracked(box.id, center_x, center_y))
+                else:
+                    for i, item in enumerate(coordinateObject):
+                        if item.objectId == box.id:
+                            coordinateObject[i] = objekTracked(box.id, center_x, center_y)
+                            break
+
                 img = r.plot()
 
         return detections, img
@@ -186,14 +193,20 @@ class ObjectDetection:
         p4 = (self.end_x, self.end_y)
         p1 = (cx, cy)
         p2 = (prev_cx, prev_cy)
+        print(p1)
+        print(p2)
         tc1 = (p1[0] - p3[0]) * (p3[1] - p4[1]) - (p1[1] - p3[1]) * (p3[0] - p4[0])
         tc2 = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0])
         td1 = (p2[0] - p1[0]) * (p1[1] - p3[1]) - (p2[1] - p1[1]) * (p1[0] - p3[0])
         td2 = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0])
 
         if (tc2 != 0 and td2 != 0 and 0 <= tc1 / tc2 <= 1 and 0 <= td1 / td2 <= 1):
-            self.entry_count = self.entry_count + 1
-            print(self.entry_count)
+            direction = check_direction(p1, p2, p3, p4)
+            if ( direction < 180):
+                self.entry_count = self.entry_count + 1
+            if (direction > 180):
+                self.exit_count = self.exit_count + 1
+
 
     def check_direction(pt1, pt2, pt3, pt4):
         u = np.array(line_vectorize(pt1, pt2))
