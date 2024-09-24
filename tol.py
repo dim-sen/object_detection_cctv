@@ -3,19 +3,15 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 from numpy import linalg as LA
-import threading
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def line_vectorize(point1, point2):
     a = point2[0] - point1[0]
     b = point2[1] - point1[1]
     return [a, b]
 
-
 coordinateObject = []
-
 
 class objekTracked:
     def __init__(self, objectId, x, y):
@@ -23,13 +19,11 @@ class objekTracked:
         self.x = x
         self.y = y
 
-
 def getObjectById(objectId):
     for object in coordinateObject:
         if object.objectId == objectId:
             return object
     return None
-
 
 class ObjectDetection:
     def __init__(self, capture):
@@ -42,7 +36,6 @@ class ObjectDetection:
         self.point_count = 0
         self.entry_count = 0
         self.exit_count = 0
-        self.running = True  # To control the thread
 
     def load_model(self):
         model = YOLO("yolov5s.pt")
@@ -66,16 +59,15 @@ class ObjectDetection:
                 center_x = (x1 + x2) // 2
                 center_y = (y1 + y2) // 2
                 print(box.id)
-                if getObjectById(box.id) is not None:
+                if getObjectById(box.id) != None:
                     self.is_line_crossed_danger(center_x, center_y, getObjectById(box.id).x, getObjectById(box.id).y)
-                else:
+                if getObjectById(box.id) == None:
                     coordinateObject.append(objekTracked(box.id, center_x, center_y))
-
-                # Update position if already tracked
-                for i, item in enumerate(coordinateObject):
-                    if item.objectId == box.id:
-                        coordinateObject[i] = objekTracked(box.id, center_x, center_y)
-                        break
+                else:
+                    for i, item in enumerate(coordinateObject):
+                        if item.objectId == box.id:
+                            coordinateObject[i] = objekTracked(box.id, center_x, center_y)
+                            break
                 img = r.plot()
 
         return detections, img
@@ -128,16 +120,18 @@ class ObjectDetection:
             elif self.point_count == 2:
                 self.reference_x, self.reference_y = x, y
                 self.point_count += 1
-                print(
-                    f"Lines set: Start({self.start_x}, {self.start_y}), End({self.end_x}, {self.end_y}), Reference({self.reference_x}, {self.reference_y})")
+                print(f"Lines set: Start({self.start_x}, {self.start_y}), End({self.end_x}, {self.end_y}), Reference({self.reference_x}, {self.reference_y})")
 
-    def process_frames(self):
+    def __call__(self):
         cap = cv2.VideoCapture(self.capture)
         if not cap.isOpened():
             print("Error: Unable to open video capture.")
             return
 
-        while self.running:
+        cv2.namedWindow('Image')
+        cv2.setMouseCallback('Image', self.mouse_callback)
+
+        while True:
             ret, img = cap.read()
             if not ret:
                 print("Error: Unable to read frame.")
@@ -148,22 +142,10 @@ class ObjectDetection:
             img = self.draw_lines(img)
             cv2.imshow('Image', img)
             if cv2.waitKey(1) & 0xFF == ord('q'):
-                self.running = False
+                break
 
         cap.release()
         cv2.destroyAllWindows()
-
-    def __call__(self):
-        cv2.namedWindow('Image')
-        cv2.setMouseCallback('Image', self.mouse_callback)
-
-        # Start the frame processing thread
-        thread = threading.Thread(target=self.process_frames)
-        thread.start()
-
-        # Join the thread back to the main thread to wait for its completion
-        thread.join()
-
 
 # Ganti URL RTSP dengan URL CCTV kamu
 rtsp_url = "https://www.tjt-info.co.id/LiveApp/streams/998223146655371157400972.m3u8"
