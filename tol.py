@@ -51,38 +51,39 @@ class ObjectDetection:
         detections = []
         cv2.putText(img, f'Entry: {self.entry_count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(img, f'Exit: {self.exit_count}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
         for r in results:
             boxes = r.boxes
             for box in boxes:
+                # Dapatkan koordinat bounding box
                 x1, y1, x2, y2 = box.xyxy[0]
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
 
-                # Menghitung posisi tengah (center) dari bounding box
+                # Hitung pusat (center) bounding box
                 center_x = (x1 + x2) // 2
                 center_y = (y1 + y2) // 2
-                print(f'Object ID: {box.id}')
 
-                # Periksa apakah object dengan ID tersebut sudah ada
+                # Cetak ID objek untuk referensi debugging
+                print(box.id)
+
+                # Gambar lingkaran di pusat bounding box
+                cv2.circle(img, (center_x, center_y), radius=5, color=(255, 0, 0), thickness=-1)
+
+                # Pengecekan jika objek telah dilacak sebelumnya dan cek apakah objek telah melintasi garis
                 if getObjectById(box.id) != None:
                     self.is_line_crossed_danger(center_x, center_y, getObjectById(box.id).x, getObjectById(box.id).y)
 
-                # Jika object baru, tambahkan ke dalam list koordinat
+                # Jika objek baru, tambahkan ke daftar coordinateObject
                 if getObjectById(box.id) == None:
                     coordinateObject.append(objekTracked(box.id, center_x, center_y))
                 else:
-                    # Update koordinat object jika sudah ada
+                    # Update posisi objek di dalam daftar
                     for i, item in enumerate(coordinateObject):
                         if item.objectId == box.id:
                             coordinateObject[i] = objekTracked(box.id, center_x, center_y)
                             break
 
-                # Gambar lingkaran di tengah object
-                cv2.circle(img, (center_x, center_y), 5, (0, 255, 0), -1)  # -1 untuk fill the circle dengan warna hijau
-
-                # Tambahkan label ID object di dekat lingkaran
-                cv2.putText(img, f'ID: {box.id}', (center_x - 10, center_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                            (255, 0, 0), 2)
+                # Gambar bounding box di gambar (frame) menggunakan fungsi YOLO
+                img = r.plot()
 
         return detections, img
 
